@@ -1,0 +1,56 @@
+# Dockerfile.android - builds the Android debug APK inside the image
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH=$PATH:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin
+
+# Install dependencies (including gradle as fallback)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jdk wget unzip git ca-certificates bash coreutils procps curl gnupg \
+    gradle \
+ && rm -rf /var/lib/apt/lists/*
+
+# Create SDK root dirs
+RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools
+RUN mkdir -p ${ANDROID_SDK_ROOT}/platform-tools
+
+WORKDIR /tmp
+
+# Download command-line tools (update version if necessary)
+RUN wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip \
+ && unzip -q cmdline-tools.zip -d ${ANDROID_SDK_ROOT}/cmdline-tools \
+ && rm -f cmdline-tools.zip \
+ && mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools/latest \
+ && if [ -d "${ANDROID_SDK_ROOT}/cmdline-tools/cmdline-tools" ]; then mv ${ANDROID_SDK_ROOT}/cmdline-tools/cmdline-tools/* ${ANDROID_SDK_ROOT}/cmdline-tools/latest/ || true; fi \
+ && if [ -d "${ANDROID_SDK_ROOT}/cmdline-tools/tools" ]; then mv ${ANDROID_SDK_ROOT}/cmdline-tools/tools/* ${ANDROID_SDK_ROOT}/cmdline-tools/latest/ || true; fi
+
+# Normalize and ensure sdkmanager is executable
+RUN sed -i 's/\r$//' ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager || true \
+ && chmod +x ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager
+
+# Install SDK components: API 27..31 and build-tools 31.0.0
+RUN yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --licenses || true
+RUN ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-27" "platforms;android-28" "platforms;android-29" "platforms;android-30" "platforms;android-31" "build-tools;31.0.0"
+
+# Copy the project into the container
+WORKDIR /project
+COPY . /project
+
+# Ensure gradlew exists or fallback to installed gradle
+RUN if [ -f /project/gradlew ]; then \
+      sed -i 's/\r$//' /project/gradlew || true; \
+      /bin/chmod +x /project/gradlew; \
+    else \
+      echo "gradlew not found; using system gradle (installed via apt)"; \
+    fi
+
+# Build the project: prefer gradlew if present, otherwise use gradle
+RUN if [ -f /project/gradlew ]; then \
+      echo "Running ./gradlew clean assembleDebug"; \
+      ./gradlew clean assembleDebug --no-daemon --stacktrace; \
+    else \
+      echo "Running gradle clean assembleDebug"; \
+      gradle clean assembleDebug --no-daemon --stacktrace; \
+    fi
+# Output APK path: /project/app/build/outputs/apk/debug/app-debug.apk

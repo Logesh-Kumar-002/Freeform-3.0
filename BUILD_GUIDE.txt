@@ -1,0 +1,33 @@
+BUILD_GUIDE - how to build the APK (generated 2025-11-08T15:13:55.434652 UTC)
+
+This package contains:
+- the reorganized Android project (root where settings.gradle(.kts) exists)
+- Dockerfile.android (self-contained builder)
+- .github/workflows/docker-build-android.yml (CI workflow that builds with Docker)
+
+OPTIONS TO BUILD:
+
+1) Build with Android Studio (recommended)
+   - Open Android Studio -> Open project -> select this project root.
+   - Let Studio download SDK components if prompted.
+   - Build -> Build Bundle(s) / APK(s) -> Build APK(s).
+   - APK will be at app/build/outputs/apk/debug/app-debug.apk
+
+2) Build locally with Docker (no Android SDK install)
+   - Install Docker on your machine.
+   - From project root run:
+     docker build -f Dockerfile.android -t mi-freeform-build .
+     docker create --name tmp mi-freeform-build
+     docker cp tmp:/project/app/build/outputs/apk/debug/app-debug.apk ./app-debug.apk
+     docker rm tmp
+   - Install the APK on your device with: adb install -r app-debug.apk
+
+3) Build via GitHub Actions (automatic on push to main)
+   - Push this repository to GitHub (branch main).
+   - The included workflow (.github/workflows/docker-build-android.yml) will run. Wait for the build to finish.
+   - Download the artifact 'app-debug-apk' from the Actions run when complete.
+
+NOTES:
+- This Dockerfile installs Android platforms 27..31 and build-tools 31.0.0 for compatibility with Android 8.1 through Android 12.
+- If your project requires a specific build-tools version, edit Dockerfile.android and the workflow to match.
+- If gradle wrapper (gradlew) is missing, the Dockerfile falls back to system 'gradle' (installed via apt). For reproducible builds, add the Gradle wrapper to the repo.

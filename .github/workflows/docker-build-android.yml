@@ -1,0 +1,62 @@
+name: Docker Android Build - produce debug APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  DOCKER_IMAGE_NAME: mi-freeform-builder
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for Android build
+        run: |
+          echo "Building docker image ${DOCKER_IMAGE_NAME}..."
+          docker build --progress=plain -f Dockerfile.android -t ${DOCKER_IMAGE_NAME} .
+        shell: bash
+
+      - name: Create container from built image
+        run: |
+          echo "Creating temporary container..."
+          docker create --name android_build_container ${DOCKER_IMAGE_NAME} || (docker rm -f android_build_container; docker create --name android_build_container ${DOCKER_IMAGE_NAME})
+        shell: bash
+
+      - name: Copy APK out of container
+        run: |
+          set -eux
+          CONTAINER_NAME=android_build_container
+          APK_PATH_IN_CONTAINER="/project/app/build/outputs/apk/debug/app-debug.apk"
+          if docker cp ${CONTAINER_NAME}:${APK_PATH_IN_CONTAINER} ./app-debug.apk; then
+            echo "APK copied to workspace: ./app-debug.apk"
+          else
+            echo "APK not found at ${APK_PATH_IN_CONTAINER} inside container. Listing container /project contents for debug:"
+            docker start ${CONTAINER_NAME} || true
+            docker exec ${CONTAINER_NAME} /bin/sh -c "ls -la /project || true"
+            docker cp ${CONTAINER_NAME}:/project ./project-from-container || true
+            du -h ./project-from-container | head -n 50 || true
+            echo "Failed to copy APK. Check gradle output in container build logs above."
+            exit 1
+          fi
+        shell: bash
+
+      - name: Remove temporary container
+        if: always()
+        run: docker rm -f android_build_container || true
+        shell: bash
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app-debug.apk
