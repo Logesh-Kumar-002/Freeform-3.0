@@ -1,4 +1,5 @@
 import com.github.kr328.gradle.zygote.ZygoteLoader
+import com.github.vova7878.ZygoteLoader
 
 plugins {
     alias(libs.plugins.androidApplication)
